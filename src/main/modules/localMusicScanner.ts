@@ -364,4 +364,34 @@ export function initializeLocalMusicScanner(): void {
       return [];
     }
   });
+
+  // 清理 AudioCovers 目录里不再被任何条目引用的残留封面文件。
+  // 渲染进程在完成一次全量扫描后传入当前所有有效 coverPath，主进程按 basename 比对，
+  // 删除集合外的孤儿文件（歌曲被删/移出库后落下的封面）。只动 readdir 出来的目录内
+  // 文件，无路径穿越风险。
+  ipcMain.handle('prune-local-music-covers', async (_, validCoverPaths: string[]) => {
+    try {
+      const dir = getCoverDir();
+      const valid = new Set(
+        (validCoverPaths || []).filter(Boolean).map((p) => path.basename(p))
+      );
+      const names = await fs.promises.readdir(dir).catch(() => [] as string[]);
+      let removed = 0;
+      await Promise.all(
+        names.map(async (name) => {
+          if (valid.has(name)) return;
+          try {
+            await fs.promises.unlink(path.join(dir, name));
+            removed += 1;
+          } catch (error) {
+            console.error('清理残留封面失败:', name, error);
+          }
+        })
+      );
+      return { removed };
+    } catch (error: any) {
+      console.error('清理残留封面出错:', error);
+      return { error: error?.message || '清理失败' };
+    }
+  });
 }

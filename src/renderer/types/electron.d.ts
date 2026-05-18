@@ -28,6 +28,10 @@ export interface IElectronAPI {
   ) => Promise<{ files: { path: string; modifiedTime: number }[]; count: number }>;
   /** 批量解析本地音乐文件元数据 */
   parseLocalMusicMetadata: (_filePaths: string[]) => Promise<LocalMusicMeta[]>;
+  /** 清理 AudioCovers 目录里不再被引用的残留封面文件 */
+  pruneLocalMusicCovers: (
+    _validCoverPaths: string[]
+  ) => Promise<{ removed: number } | { error: string }>;
   // Download manager
   downloadAdd: (_task: any) => Promise<string>;
   downloadAddBatch: (_tasks: any) => Promise<{ batchId: string; taskIds: string[] }>;

@@ -190,6 +190,18 @@ export const useLocalMusicStore = defineStore(
 
         // 5. 从 IndexedDB 重新加载完整列表
         musicList.value = await localDB.getAllData(LOCAL_MUSIC_STORE);
+
+        // 6. 清理 AudioCovers 目录里不再被任何条目引用的残留封面。
+        // musicList 此刻已是全量权威列表，传入所有有效 coverPath；歌曲被删/移出库后
+        // 落单的封面文件由主进程按 basename 比对删除。失败不影响扫描结果。
+        try {
+          const validCoverPaths = musicList.value
+            .map((entry) => entry.coverPath)
+            .filter((p): p is string => !!p);
+          await window.api.pruneLocalMusicCovers(validCoverPaths);
+        } catch (error) {
+          console.error('清理残留封面失败:', error);
+        }
       } catch (error) {
         console.error('扫描本地音乐失败:', error);
         message.error('扫描本地音乐失败');

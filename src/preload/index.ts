@@ -83,6 +83,8 @@ const api = {
     ipcRenderer.invoke('scan-local-music-with-stats', folderPath),
   parseLocalMusicMetadata: (filePaths: string[]) =>
     ipcRenderer.invoke('parse-local-music-metadata', filePaths),
+  pruneLocalMusicCovers: (validCoverPaths: string[]) =>
+    ipcRenderer.invoke('prune-local-music-covers', validCoverPaths),
 
   // Download manager
   downloadAdd: (task: any) => ipcRenderer.invoke('download:add', task),

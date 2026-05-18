@@ -44,6 +44,10 @@ interface API {
   parseLocalMusicMetadata: (
     filePaths: string[]
   ) => Promise<import('../renderer/types/localMusic').LocalMusicMeta[]>;
+  /** 清理 AudioCovers 目录里不再被引用的残留封面文件 */
+  pruneLocalMusicCovers: (
+    validCoverPaths: string[]
+  ) => Promise<{ removed: number } | { error: string }>;
   // Download manager
   downloadAdd: (task: any) => Promise<string>;
   downloadAddBatch: (tasks: any) => Promise<{ batchId: string; taskIds: string[] }>;
