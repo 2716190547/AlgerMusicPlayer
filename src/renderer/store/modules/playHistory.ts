@@ -13,27 +13,22 @@ import {
 
 export type { MusicHistoryItem };
 
-// 一次性清理 v1 时代遗留的 localStorage key。
-// 旧版本以 5 个独立 key 单独存历史，新版本合并到 PERSIST_KEY 由 persistedstate 管。
-// 不做数据迁移：历史是低关键性衍生数据，老用户升级后看到空"最近播放"，重新听几次即可。
-// 仅清掉旧 key 释放配额，避免和新 key 双倍占用
-const LEGACY_KEYS = [
+// v1 时代以 5 个独立 key 单独存历史，新版本合并到 PERSIST_KEY 由 persistedstate 管。
+// 这 5 个 key 的内容会被迁移进新 key（见 migrateLegacyPlayHistory），其余 misc key 直接删。
+const LEGACY_HISTORY_KEYS = [
   'musicHistory',
   'podcastHistory',
   'playlistHistory',
   'albumHistory',
-  'podcastRadioHistory',
+  'podcastRadioHistory'
+] as const;
+
+const LEGACY_MISC_KEYS = [
   // v1 迁移方案的 flag，已随 e53a035 发布到用户机器上
   'playHistory-migrated',
   // v1 时代独立持久化的播放模式，现已并入 player-core-store
   'playMode'
 ];
-
-export const cleanupLegacyPlayHistoryStorage = (): void => {
-  if (localStorage.getItem('playHistory-cleaned-v1')) return;
-  LEGACY_KEYS.forEach((key) => localStorage.removeItem(key));
-  localStorage.setItem('playHistory-cleaned-v1', '1');
-};
 
 // ==================== 类型定义 ====================
 
@@ -120,6 +115,60 @@ const serializePlayHistoryState = (state: any): string => {
     albumHistory: stripBase64CoversList(s.albumHistory),
     podcastRadioHistory: stripBase64CoversList(s.podcastRadioHistory)
   });
+};
+
+const readLegacyArray = (key: string): unknown[] => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * 把 v1 时代 5 个独立 key 的历史迁移进新的 PERSIST_KEY。
+ *
+ * 仅在新 key 尚不存在时执行——已是 v2 用户的 play-history-store 更新，不能被旧数据覆盖。
+ * 落盘走 serializePlayHistoryState：自动 minify 剥离 base64 封面 / lyric / song 等派生
+ * 字段，迁移过来的旧脏数据不会反过来撑爆 5MB 配额。
+ *
+ * 调用时机由 cleanupLegacyPlayHistoryStorage 保证早于 playHistory store 实例化
+ * （player.ts initializePlayState 第一步，先于 playbackController 动态 import），
+ * 因此直接写 localStorage 即可被 persistedstate 在 store 创建时 hydrate 回来。
+ */
+const migrateLegacyPlayHistory = (): void => {
+  if (localStorage.getItem(PERSIST_KEY)) return;
+  const migrated: PersistedPlayHistoryState = {
+    musicHistory: readLegacyArray('musicHistory') as MusicHistoryItem[],
+    podcastHistory: readLegacyArray('podcastHistory') as DjProgram[],
+    playlistHistory: readLegacyArray('playlistHistory') as PlaylistHistoryItem[],
+    albumHistory: readLegacyArray('albumHistory') as AlbumHistoryItem[],
+    podcastRadioHistory: readLegacyArray('podcastRadioHistory') as PodcastRadioHistoryItem[]
+  };
+  const hasAny = Object.values(migrated).some((arr) => arr.length > 0);
+  if (!hasAny) return;
+  try {
+    localStorage.setItem(PERSIST_KEY, serializePlayHistoryState(migrated));
+  } catch (error) {
+    console.error('[PlayHistory] v1 历史迁移失败:', error);
+  }
+};
+
+/**
+ * 一次性迁移 + 清理 v1 时代遗留的 localStorage key。
+ * 先把 5 个历史 key 迁进新 PERSIST_KEY，再删掉全部旧 key 释放配额，
+ * 避免和新 key 双倍占用。由 playHistory-cleaned-v1 flag 保证只跑一次。
+ */
+export const cleanupLegacyPlayHistoryStorage = (): void => {
+  if (localStorage.getItem('playHistory-cleaned-v1')) return;
+  migrateLegacyPlayHistory();
+  [...LEGACY_HISTORY_KEYS, ...LEGACY_MISC_KEYS].forEach((key) =>
+    localStorage.removeItem(key)
+  );
+  localStorage.setItem('playHistory-cleaned-v1', '1');
 };
 
 /**
